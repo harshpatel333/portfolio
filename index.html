@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>harsh — terminal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,15 +22,17 @@ body{
   font-size:14px; line-height:1.7; -webkit-font-smoothing:antialiased;
   background-image:radial-gradient(800px 480px at 75% -8%,rgba(73,201,138,0.05),transparent 70%);
   display:flex; align-items:center; justify-content:center; padding:22px;
+  -webkit-tap-highlight-color:transparent;
 }
 ::selection{background:rgba(103,230,164,0.25); color:#fff}
 a{color:var(--blue); text-decoration:none} a:hover{color:var(--green); text-decoration:underline}
 
 .window{
-  width:100%; max-width:880px; height:min(86vh,720px);
+  width:100%; max-width:880px; height:min(86vh,720px); height:min(86dvh,720px);
   background:var(--win); border:1px solid var(--border); border-radius:11px;
   display:flex; flex-direction:column; overflow:hidden;
   box-shadow:0 24px 70px -28px rgba(0,0,0,0.85);
+  touch-action:manipulation;
 }
 .titlebar{
   display:flex; align-items:center; gap:9px; padding:0 14px; height:38px;
@@ -116,6 +118,7 @@ a{color:var(--blue); text-decoration:none} a:hover{color:var(--green); text-deco
 .opt .label{color:var(--muted); min-width:150px}
 .opt .desc{color:var(--dim); font-size:12.5px}
 .opt.sel{background:rgba(103,230,164,0.08)}
+.opt:active{background:rgba(103,230,164,0.16)}
 .opt.sel .ptr{opacity:1}
 .opt.sel .label{color:var(--green); font-weight:500}
 .opt.sel .desc{color:var(--muted)}
@@ -132,13 +135,34 @@ a{color:var(--blue); text-decoration:none} a:hover{color:var(--green); text-deco
 
 .dot.max{cursor:pointer}
 body.fs{padding:0}
-body.fs .window{width:100%; height:100vh; max-width:none; border:none; border-radius:0; box-shadow:none}
+body.fs .window{width:100%; height:100vh; height:100dvh; max-width:none; border:none; border-radius:0; box-shadow:none}
+
+/* touch devices: bigger targets regardless of width (tablets included) */
+@media(pointer:coarse){
+  .opt{padding:10px 10px}
+}
 
 @media(max-width:600px){
   body{padding:0}
-  .window{height:100vh; max-width:none; border:none; border-radius:0}
+  .window{height:100vh; height:100dvh; max-width:none; border:none; border-radius:0}
   .ascii{display:none}
-  .opt .label{min-width:110px}
+  .screen{padding:16px max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left))}
+  /* menu becomes a two-column tap grid; descriptions and the keyboard
+     pointer column step aside, labels carry the row */
+  .menu{
+    display:grid; grid-template-columns:1fr 1fr; gap:2px 6px;
+    padding:8px max(14px,env(safe-area-inset-right)) 4px max(14px,env(safe-area-inset-left));
+    max-height:38vh; max-height:38dvh; overflow-y:auto;
+  }
+  .menu-label,.nomatch{grid-column:1/-1}
+  .menu-label{margin-bottom:3px}
+  .opt{gap:7px}
+  .opt .ptr{display:none}
+  .opt .label{min-width:0; overflow-wrap:anywhere; font-size:13px}
+  .opt .desc{display:none}
+  .promptline{padding:9px max(14px,env(safe-area-inset-right)) 9px max(14px,env(safe-area-inset-left))}
+  #inp{font-size:16px} /* ≥16px stops iOS focus-zoom */
+  .hints{padding:7px max(14px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
   .hints .hide-sm{display:none}
 }
 </style>
@@ -156,7 +180,7 @@ body.fs .window{width:100%; height:100vh; max-width:none; border:none; border-ra
     <div class="banner">
       <div class="t1"><span class="star">✻</span> welcome to harsh.cv</div>
       <div class="t2">founding engineer · building <b style="color:var(--text)">Series</b><br>
-      <span class="k">↑ ↓</span> to move · <span class="k">↵</span> to select · or just start typing</div>
+      <span id="banner-keys"><span class="k">↑ ↓</span> to move · <span class="k">↵</span> to select · or just start typing</span></div>
     </div>
   </div>
 
@@ -182,6 +206,7 @@ body.fs .window{width:100%; height:100vh; max-width:none; border:none; border-ra
   var menuEl = document.getElementById('menu');
   var inp = document.getElementById('inp');
   var prPath = document.getElementById('pr-path');
+  var isTouch = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
 
   /* ---------- themes ---------- */
   var themes = {
@@ -564,7 +589,13 @@ body.fs .window{width:100%; height:100vh; max-width:none; border:none; border-ra
   });
   inp.addEventListener('input',function(){ sel=0; renderMenu(); });
 
-  document.querySelector('.window').addEventListener('click',function(e){ if(e.target.tagName!=='A') inp.focus(); });
+  /* on touch, only summon the keyboard when the prompt itself is tapped —
+     otherwise every menu tap would pop it open */
+  document.querySelector('.window').addEventListener('click',function(e){
+    if(e.target.tagName==='A') return;
+    if(isTouch && !(e.target.closest && e.target.closest('.promptline'))) return;
+    inp.focus();
+  });
 
   /* ---------- fullscreen ---------- */
   function toggleFS(){
@@ -574,7 +605,7 @@ body.fs .window{width:100%; height:100vh; max-width:none; border:none; border-ra
       if(on && document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen().catch(function(){}); }
       else if(!on && document.fullscreenElement && document.exitFullscreen){ document.exitFullscreen().catch(function(){}); }
     }catch(e){}
-    scrollDown(); inp.focus();
+    scrollDown(); if(!isTouch) inp.focus();
   }
   document.getElementById('maxbtn').addEventListener('click',function(e){ e.stopPropagation(); toggleFS(); });
   document.addEventListener('fullscreenchange',function(){
@@ -582,9 +613,16 @@ body.fs .window{width:100%; height:100vh; max-width:none; border:none; border-ra
   });
 
   /* ---------- boot ---------- */
+  if(isTouch){
+    inp.placeholder='type a command…';
+    document.querySelector('.hints').innerHTML=
+      '<span><b>tap</b> a command above</span><span>type <b>help</b> for everything</span>';
+    var bk=document.getElementById('banner-keys');
+    if(bk) bk.innerHTML='<span class="k">tap</span> a command below · or just start typing';
+  }
   fetchContrib();
   renderMenu();
-  inp.focus();
+  if(!isTouch) inp.focus();
 })();
 </script>
 </body>
